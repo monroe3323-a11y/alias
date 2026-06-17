@@ -1,0 +1,1837 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alias: Underground</title>
+    <!-- Подключение PeerJS для реализации сетевого WebRTC мультиплеера -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <style>
+        /* Основные стили в стиле андеграунд-минимализма */
+        :root {
+            --bg-color: #080808;
+            --panel-bg: rgba(18, 18, 18, 0.95);
+            --border-color: #222222;
+            --accent-color: #ffffff;
+            --dim-color: #666666;
+            --danger-color: #cc3333;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--accent-color);
+            font-family: 'Times New Roman', Times, serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Фоновый слой с черными граффити-рисунками (SVG) */
+        .background-graffiti {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -2;
+            opacity: 0.12;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='500' viewBox='0 0 100 100'%3E%3Ctext x='10' y='30' fill='%23ffffff' font-family='Impact' font-size='14' transform='rotate(-20 10 30)'%3EUNDERGROUND%3C/text%3E%3Ctext x='45' y='75' fill='%23ffffff' font-family='Impact' font-size='20' transform='rotate(15 45 75)'%3EALIAS%3C/text%3E%3Cpath d='M5,50 Q25,20 50,50 T95,50' fill='none' stroke='%23ffffff' stroke-width='1.5'/%3E%3Cpath d='M10,90 L90,10' fill='none' stroke='%23ffffff' stroke-width='1' stroke-dasharray='2,2'/%3E%3Ccircle cx='30' cy='30' r='2' fill='%23ffffff'/%3E%3Ccircle cx='70' cy='80' r='4' fill='%23ffffff'/%3E%3C/svg%3E");
+        }
+
+        .dark-vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -2;
+            background: radial-gradient(circle, transparent 40%, #000000 95%);
+            pointer-events: none;
+        }
+
+        /* АНИМАЦИИ ПЕТРУШКИ */
+        .petrushka-char {
+            position: fixed;
+            z-index: -1; /* Находится на заднем плане за окнами игры */
+            pointer-events: none;
+            width: 110px;
+            height: 135px;
+            transition: left 2.2s ease-in-out, top 2.2s ease-in-out, transform 0.3s;
+        }
+
+        /* Определение точек вращения (трансформации) суставов */
+        .pet-leg-l { transform-origin: 52px 113px; transition: transform 0.3s; }
+        .pet-leg-r { transform-origin: 68px 113px; transition: transform 0.3s; }
+        .pet-arm-l { transform-origin: 48px 83px; transition: transform 0.3s; }
+        .pet-arm-r { transform-origin: 72px 83px; transition: transform 0.3s; }
+        .pet-head-group { transform-origin: 60px 76px; transition: transform 0.3s; }
+
+        /* Режим бега */
+        .petrushka-char.running .pet-leg-l { animation: pet-run-cycle 0.25s infinite alternate ease-in-out; }
+        .petrushka-char.running .pet-leg-r { animation: pet-run-cycle 0.25s infinite alternate-reverse ease-in-out; }
+        .petrushka-char.running .pet-arm-l { animation: pet-arm-swing 0.25s infinite alternate ease-in-out; }
+        .petrushka-char.running .pet-arm-r { animation: pet-arm-swing 0.25s infinite alternate-reverse ease-in-out; }
+
+        /* Режим позы / Танца */
+        .petrushka-char.posing { animation: pet-dance-jump 0.6s infinite alternate ease-in-out; }
+        .petrushka-char.posing .pet-arm-l { transform: rotate(-130deg); }
+        .petrushka-char.posing .pet-arm-r { transform: rotate(130deg); }
+        .petrushka-char.posing .pet-head-group { animation: pet-head-bob 0.3s infinite alternate ease-in-out; }
+
+        /* Режим "Смотрит" (любопытство) */
+        .petrushka-char.looking .pet-head-group { transform: rotate(-15deg); }
+        .petrushka-char.looking .pet-arm-l { transform: rotate(30deg); }
+        .petrushka-char.looking .pet-arm-r { transform: rotate(-30deg); }
+
+        /* Ключевые кадры для Петрушки */
+        @keyframes pet-run-cycle { 0% { transform: rotate(-25deg); } 100% { transform: rotate(25deg); } }
+        @keyframes pet-arm-swing { 0% { transform: rotate(-35deg); } 100% { transform: rotate(35deg); } }
+        @keyframes pet-dance-jump { 0% { transform: translateY(0) scaleY(1); } 100% { transform: translateY(-25px) scaleY(0.95); } }
+        @keyframes pet-head-bob { 0% { transform: rotate(-8deg); } 100% { transform: rotate(8deg); } }
+
+        /* Контейнер игры */
+        .game-wrapper {
+            width: 100%;
+            max-width: 850px;
+            padding: 15px;
+            z-index: 1;
+        }
+
+        /* Экраны */
+        .screen {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 25px;
+            border-radius: 2px;
+            box-shadow: 0 15px 45px rgba(0,0,0,0.9);
+            display: none;
+            backdrop-filter: blur(4px);
+        }
+
+        .screen.active {
+            display: block;
+        }
+
+        /* Типографика */
+        h1 {
+            font-size: 3.2rem;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            margin-bottom: 25px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+            font-style: italic;
+        }
+
+        h2 {
+            font-size: 1.6rem;
+            margin-bottom: 15px;
+            font-weight: normal;
+            border-bottom: 1px dashed var(--border-color);
+            padding-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        /* Кнопки */
+        .btn {
+            background: transparent;
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 12px 24px;
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 1.1rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn:hover {
+            background: var(--accent-color);
+            color: var(--bg-color);
+        }
+
+        .btn:disabled {
+            border-color: var(--border-color);
+            color: var(--dim-color);
+            cursor: not-allowed;
+            background: transparent;
+        }
+
+        .btn-danger {
+            border-color: var(--danger-color);
+            color: var(--danger-color);
+        }
+
+        .btn-danger:hover {
+            background: var(--danger-color);
+            color: var(--accent-color);
+        }
+
+        /* Инпуты */
+        .input-group {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-group label {
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: var(--dim-color);
+            letter-spacing: 1px;
+        }
+
+        input[type="text"] {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--accent-color);
+            padding: 12px 15px;
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 1.1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent-color);
+        }
+
+        /* Лобби: Сетка команд */
+        .lobby-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        @media (min-width: 650px) {
+            .lobby-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .team-card {
+            border: 1px solid var(--border-color);
+            background: rgba(10, 10, 10, 0.95);
+            padding: 15px;
+            position: relative;
+        }
+
+        .team-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 6px;
+        }
+
+        .team-card-title {
+            font-weight: bold;
+            font-size: 1.05rem;
+            text-transform: uppercase;
+        }
+
+        .slots-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .slot {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 40px;
+        }
+
+        .slot-badge {
+            font-size: 0.75rem;
+            color: var(--dim-color);
+            width: 100px;
+            text-transform: uppercase;
+        }
+
+        .slot-input {
+            flex-grow: 1;
+            font-size: 0.9rem;
+            padding: 5px;
+        }
+
+        .btn-swap {
+            background: transparent;
+            border: none;
+            color: var(--accent-color);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: transform 0.2s;
+        }
+
+        .btn-swap:hover {
+            transform: rotate(180deg);
+        }
+
+        /* Настройки времени и Паков */
+        .settings-section {
+            margin: 20px 0;
+            padding: 15px 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .settings-label {
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            color: var(--dim-color);
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+
+        .options-flex {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .option-btn {
+            flex: 1;
+            min-width: 100px;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+
+        .option-btn.selected {
+            background: var(--accent-color);
+            color: var(--bg-color);
+        }
+
+        /* Игровой процесс */
+        .gameplay-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        @media (min-width: 750px) {
+            .gameplay-grid {
+                grid-template-columns: 1.2fr 0.8fr;
+            }
+        }
+
+        /* Панель переключения ролей */
+        .perspective-bar {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+        }
+
+        .perspective-btn {
+            font-size: 0.85rem;
+            padding: 8px 16px;
+            text-transform: uppercase;
+        }
+
+        .explainer-panel {
+            text-align: center;
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            background: rgba(12, 12, 12, 0.95);
+        }
+
+        .spectator-panel {
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            background: rgba(12, 12, 12, 0.95);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .word-container {
+            min-height: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed var(--accent-color);
+            margin: 20px 0;
+            padding: 15px;
+            background: #050505;
+        }
+
+        .word-display {
+            font-size: 2.8rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .next-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .next-btn {
+            flex: 1;
+            padding: 12px;
+            font-size: 1rem;
+        }
+
+        /* Столбик слов для зрителей */
+        .spectator-words-list {
+            flex-grow: 1;
+            max-height: 250px;
+            overflow-y: auto;
+            margin-top: 10px;
+            font-size: 0.95rem;
+            border-left: 1px solid var(--border-color);
+            padding-left: 15px;
+        }
+
+        .spectator-word-item {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .spec-success { color: var(--accent-color); }
+        .spec-skip { color: var(--danger-color); }
+
+        /* Экран Подсчета Очков */
+        .scoring-container {
+            max-height: 350px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+
+        .scoring-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .scoring-word {
+            font-size: 1.15rem;
+        }
+
+        .scoring-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .score-toggle-btn {
+            width: 45px;
+            height: 45px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--dim-color);
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 1.05rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .score-toggle-btn.active-1 {
+            background: var(--accent-color);
+            color: var(--bg-color);
+            border-color: var(--accent-color);
+        }
+
+        .score-toggle-btn.active-0 {
+            background: #251010;
+            color: var(--danger-color);
+            border-color: var(--danger-color);
+        }
+
+        /* Таблица результатов */
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .results-table th, .results-table td {
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            text-align: left;
+        }
+
+        .results-table th {
+            color: var(--dim-color);
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+
+        /* Всплывающие уведомления */
+        .toast-notify {
+            position: fixed;
+            bottom: 25px;
+            background: var(--accent-color);
+            color: var(--bg-color);
+            padding: 10px 20px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.8);
+            z-index: 100;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="background-graffiti"></div>
+    <div class="dark-vignette"></div>
+
+    <!-- ВЕКТОРНАЯ ПЕТРУШКА (АВТОНОМНЫЙ ПЕРСОНАЖ ЗАДНЕГО ПЛАНА) -->
+    <div id="petrushka" class="petrushka-char standing">
+        <svg viewBox="0 0 120 150" width="100%" height="100%">
+            <!-- Колпак Петрушки (Два рожка с бубенцами) -->
+            <path class="pet-hat" d="M35 42 L60 8 L85 42 Q95 18 105 32 L83 45 L35 45 Z" fill="#cc3333" />
+            <path class="pet-hat-left-horn" d="M35 42 Q15 22 5 32 L35 45 Z" fill="#cc3333" />
+            <circle cx="60" cy="8" r="4.5" fill="#ffcc00" />
+            <circle cx="105" cy="32" r="4.5" fill="#ffcc00" />
+            <circle cx="5" cy="32" r="4.5" fill="#ffcc00" />
+            
+            <!-- Голова и Лицо -->
+            <g class="pet-head-group">
+                <circle cx="60" cy="60" r="19" fill="#ffd1a9" />
+                <circle cx="53" cy="56" r="2.5" fill="#000000" />
+                <circle cx="67" cy="56" r="2.5" fill="#000000" />
+                <path d="M60 55 L75 63 L60 66 Z" fill="#e07d65" />
+                <path d="M52 68 Q60 77 68 68" fill="none" stroke="#991111" stroke-width="2" />
+            </g>
+            
+            <!-- Воротник шута -->
+            <path d="M38 76 L45 86 L53 77 L60 88 L67 77 L75 86 L82 76 Z" fill="#ffcc00" />
+            
+            <!-- Тело (Кафтан) -->
+            <rect class="pet-torso" x="48" y="78" width="24" height="34" rx="4" fill="#cc3333" />
+            
+            <!-- Руки -->
+            <g class="pet-arm-l">
+                <path d="M48 83 Q30 90 22 104" stroke="#cc3333" stroke-width="8" stroke-linecap="round" fill="none" />
+                <circle cx="22" cy="104" r="5" fill="#ffd1a9" />
+            </g>
+            <g class="pet-arm-r">
+                <path d="M72 83 Q90 90 98 104" stroke="#cc3333" stroke-width="8" stroke-linecap="round" fill="none" />
+                <circle cx="98" cy="104" r="5" fill="#ffd1a9" />
+            </g>
+            
+            <!-- Ноги -->
+            <g class="pet-leg-l">
+                <path d="M52 112 L44 138" stroke="#0044cc" stroke-width="8" stroke-linecap="round" fill="none" />
+                <path d="M44 138 L32 141" stroke="#cc3333" stroke-width="6" stroke-linecap="round" fill="none" />
+            </g>
+            <g class="pet-leg-r">
+                <path d="M68 112 L76 138" stroke="#0044cc" stroke-width="8" stroke-linecap="round" fill="none" />
+                <path d="M76 138 L88 141" stroke="#cc3333" stroke-width="6" stroke-linecap="round" fill="none" />
+            </g>
+        </svg>
+    </div>
+
+    <div class="game-wrapper">
+
+        <!-- СЦЕНА 1: ЭКРАН ВВЕДЕНИЯ НИКНЕЙМА -->
+        <div id="screen-welcome" class="screen active">
+            <h1>Alias<br><span style="font-size: 1.8rem; letter-spacing: 9px; font-style: normal;">Underground</span></h1>
+            <div class="input-group">
+                <label for="player-nickname">Твой Никнейм</label>
+                <input type="text" id="player-nickname" placeholder="Например: GRAFF_99" value="Игрок 1">
+            </div>
+            <button class="btn" style="width: 100%;" onclick="actionCreateLobby()">Создать лобби</button>
+        </div>
+
+        <!-- СЦЕНА 2: ИНТЕРФЕЙС ВНУТРИ ЛОББИ -->
+        <div id="screen-lobby" class="screen">
+            <h2>Лобби Сессии</h2>
+            <p style="font-size: 0.85rem; color: var(--dim-color); margin-bottom: 20px; text-transform: uppercase;">
+                Перемещайтесь между бандами. Для старта нужно заполнить минимум 2 команды.
+            </p>
+
+            <!-- Сетка из 5 блоков команд -->
+            <div class="lobby-grid" id="lobby-teams-grid">
+                <!-- Генерируется через JS -->
+            </div>
+
+            <!-- Блок для обмена ссылкой лобби (Показывается только Хосту) -->
+            <div class="settings-section" id="share-lobby-box" style="display: none; border-top: none; padding-top: 0; margin-top: 0;">
+                <p class="settings-label">Связь с бандой</p>
+                <button class="btn" style="width: 100%; border-color: var(--danger-color); color: var(--danger-color);" onclick="actionShareLobbyLink()">
+                    Пригласить друзей (Поделиться лобби)
+                </button>
+            </div>
+
+            <!-- Пак слов (Категория) -->
+            <div class="settings-section">
+                <p class="settings-label">Пак слов (Категория)</p>
+                <div class="options-flex" id="pack-selector">
+                    <!-- Кнопки паков генерируются через JS -->
+                </div>
+            </div>
+
+            <!-- Строгий сетевой режим -->
+            <div class="settings-section" style="border-top: none; padding-top: 0; margin-top: 0; margin-bottom: 10px;">
+                <p class="settings-label">Сетевые ограничения</p>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="strict-role-lock" checked style="width: 18px; height: 18px; accent-color: var(--accent-color); cursor: pointer;">
+                    <label for="strict-role-lock" style="font-size: 0.95rem; text-transform: uppercase; color: var(--dim-color); cursor: pointer;">
+                        Строгий сетевой режим (блокировать экран по никнейму)
+                    </label>
+                </div>
+            </div>
+
+            <!-- Время раунда -->
+            <div class="settings-section" style="border-top: none; padding-top: 0; margin-top: 0;">
+                <p class="settings-label">Время раунда</p>
+                <div class="options-flex">
+                    <button class="btn option-btn time-btn" onclick="setRoundTime(30)">30 сек</button>
+                    <button class="btn option-btn time-btn selected" onclick="setRoundTime(60)">60 сек</button>
+                    <button class="btn option-btn time-btn" onclick="setRoundTime(90)">90 сек</button>
+                    <button class="btn option-btn time-btn" onclick="setRoundTime(120)">120 сек</button>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px;">
+                <button class="btn btn-danger" style="flex: 1;" onclick="fillDebugTeams()">Автозаполнение</button>
+                <button class="btn" style="flex: 2;" onclick="actionStartSession()">Начать сессию</button>
+            </div>
+        </div>
+
+        <!-- СЦЕНА 3: ИГРОВОЙ ПРОЦЕСС -->
+        <div id="screen-gameplay" class="screen">
+            <!-- Шапка процесса -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 20px;">
+                <div>
+                    <span style="font-size: 0.8rem; color: var(--dim-color); text-transform: uppercase;">Ход банды:</span><br>
+                    <span id="active-team-title" style="font-weight: bold; font-size: 1.25rem;">Название банды</span>
+                </div>
+                <div style="text-align: center;">
+                    <span style="font-size: 0.8rem; color: var(--dim-color); text-transform: uppercase;">Время:</span><br>
+                    <span id="game-timer-display" style="font-size: 2.2rem; font-weight: bold;">60</span>
+                </div>
+                <div>
+                    <button id="btn-pause-toggle" class="btn option-btn" onclick="togglePauseState()">Пауза</button>
+                </div>
+            </div>
+
+            <!-- ПЕРЕКЛЮЧАТЕЛЬ ЭКРАНОВ/РОЛЕЙ ДЛЯ ИГРЫ С ОДНОГО УСТРОЙСТВА ИЛИ ТРАНСЛЯЦИИ -->
+            <div class="perspective-bar">
+                <button id="persp-btn-explainer" class="btn option-btn selected perspective-btn" onclick="changePerspective('explainer')">Я Объясняющий</button>
+                <button id="persp-btn-others" class="btn option-btn perspective-btn" onclick="changePerspective('others')">Я Отгадывающий / Зритель</button>
+            </div>
+
+            <!-- Игровая разметка -->
+            <div class="gameplay-grid">
+                
+                <!-- Левая сторона: Панель Активного Игрока -->
+                <div class="explainer-panel">
+                    <p style="text-transform: uppercase; font-size: 0.8rem; color: var(--dim-color); letter-spacing: 1px;">
+                        Текущий статус просмотра
+                    </p>
+                    <p id="explainer-name-label" style="font-size: 1.15rem; margin-top: 5px; font-weight: bold; text-decoration: underline;">Никнейм</p>
+
+                    <div class="word-container">
+                        <div id="word-viewport">
+                            <!-- Сюда вставляется слово или «НЕИЗВЕСТНОЕ СЛОВО» -->
+                        </div>
+                    </div>
+
+                    <!-- Элементы управления, доступные только в режиме Объясняющего -->
+                    <div id="explainer-controls-wrapper">
+                        <p style="font-size: 0.8rem; color: var(--dim-color); text-transform: uppercase;">Темп раунда</p>
+                        <div class="next-actions">
+                            <button class="btn next-btn" onclick="handleWordTransition(true)">Следующее (Успех)</button>
+                            <button class="btn next-btn btn-danger" onclick="handleWordTransition(false)">Следующее (Пропуск)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Правая сторона: Экран зрителей (других команд) -->
+                <div class="spectator-panel">
+                    <p style="text-transform: uppercase; font-size: 0.8rem; color: var(--dim-color); letter-spacing: 1px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">
+                        Экран зрителей
+                    </p>
+                    <p style="font-size: 0.75rem; color: var(--dim-color); margin-top: 5px; text-transform: uppercase;">
+                        Другие банды и отгадывающий видят слова раунда здесь:
+                    </p>
+                    <div class="spectator-words-list" id="spec-words-column">
+                        <!-- Дублированные слова раунда появляются здесь динамически -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- СЦЕНА 4: ЭКРАН ПОДCЧЕТА ОЧКОВ ПОСЛЕ ИСТЕЧЕНИЯ ТАЙМЕРА -->
+        <div id="screen-scoring" class="screen">
+            <h2>Подсчет очков за раунд</h2>
+            <p id="scoring-team-name" style="font-size: 1.1rem; margin-bottom: 15px; font-weight: bold; text-transform: uppercase;"></p>
+            <p style="font-size: 0.85rem; color: var(--dim-color); text-transform: uppercase; margin-bottom: 20px;">
+                Каждый может выставить число (1 — угадали, 0 — нет), чтобы подтвердить результат:
+            </p>
+
+            <div class="scoring-container" id="scoring-list-wrapper">
+                <!-- Список слов с переключателями -->
+            </div>
+
+            <button class="btn" style="width: 100%; margin-top: 15px;" id="btn-confirm-round" onclick="actionSubmitRoundScores()">Принять и продолжить</button>
+        </div>
+
+        <!-- СЦЕНА 5: ПРИГОТОВЛЕНИЕ СЛЕДУЮЩЕЙ КОМАНДЫ -->
+        <div id="screen-prepare" class="screen" style="text-align: center;">
+            <h2 style="border-bottom: none;">Приготовьтесь к игре</h2>
+            <p style="font-size: 1.3rem; margin: 25px 0;">
+                Следующая банда: <strong id="prep-team-name" style="text-transform: uppercase; font-size: 1.6rem;">Банда</strong>
+            </p>
+            <div style="border: 1px solid var(--border-color); padding: 15px; background: rgba(0,0,0,0.3); margin-bottom: 30px;">
+                <p style="font-size: 0.9rem; color: var(--dim-color); text-transform: uppercase;">Состав на раунд:</p>
+                <p style="font-size: 1.1rem; margin-top: 5px;">
+                    «Объясняющий»: <strong id="prep-explainer">Игрок 1</strong> ➔ «Отгадывающий»: <strong id="prep-guesser">Игрок 2</strong>
+                </p>
+            </div>
+            <button class="btn" style="width: 100%;" onclick="actionLaunchReadyRound()">Приготовиться и начать</button>
+        </div>
+
+        <!-- СЦЕНА 6: ТАБЛИЦА ЛИДЕРОВ -->
+        <div id="screen-leaderboard" class="screen">
+            <h1>Итоги сессии</h1>
+            <table class="results-table" id="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th>Команда</th>
+                        <th>Состав банды</th>
+                        <th>Очки</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Сюда вставляются результаты сессии -->
+                </tbody>
+            </table>
+
+            <div style="display: flex; gap: 15px; margin-top: 25px;">
+                <button class="btn btn-danger" style="flex: 1;" onclick="actionResetSessionToLobby()">В лобби</button>
+                <button class="btn" style="flex: 1;" onclick="actionRestartFullGame()">Новая игра</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Компонент уведомлений -->
+    <div class="toast-notify" id="toast-el">Уведомление</div>
+
+    <script>
+        // БАЗА ДАННЫХ ПАКОВ СЛОВ
+        const ALL_WORD_PACKS = {
+            simple: {
+                name: "Простые слова",
+                words: [
+                    "Кот", "Собака", "Дом", "Окно", "Машина", "Солнце", "Книга", "Ручка", "Телефон", "Яблоко", 
+                    "Дерево", "Вода", "Хлеб", "Семья", "Друг", "Работа", "Школа", "Лес", "Река", "Море", 
+                    "Город", "Кровать", "Чай", "Кофе", "Ложка", "Тарелка", "Стол", "Стул", "Игра", "Фильм", 
+                    "Часы", "Дверь", "Стена", "Карта", "Цветок", "Снег", "Звезда", "Свет", "Звук", "Рука", 
+                    "Лицо", "Голова", "Нога", "Шаг", "Очки", "Ключ", "Сумка", "Зонт", "Шляпа", "Мыло", 
+                    "Лодка", "Гора", "Небо", "Дождь", "Ветер", "Трава", "Птица", "Рыба", "Мяч", "Кукла", 
+                    "Каша", "Сыр", "Молоко", "Масло", "Сахар", "Соль", "Лук", "Чеснок", "Гриб", "Ягода", 
+                    "Банан", "Лимон", "Арбуз", "Огурец", "Томат", "Зуб", "Глаз", "Ухо", "Нос", "Волосы", 
+                    "Нож", "Вилка", "Кружка", "Стекло", "Бумага", "Карандаш", "Краска", "Кисть", "Доска", 
+                    "Мел", "Рюкзак", "Одеяло", "Подушка", "Ковер", "Зеркало", "Шкаф", "Полка", "Лампа", 
+                    "Утюг", "Веник", "Ведро", "Топор", "Пила", "Молоток", "Гвоздь", "Забор", "Сад", "Трактор",
+                    "Самолет", "Поезд", "Метро", "Автобус", "Велосипед", "Дорога", "Мост", "Река", "Озеро", "Остров"
+                ]
+            },
+            hard: {
+                name: "Сложные слова",
+                words: [
+                    "Синхрофазотрон", "Прокрастинация", "Эквивалент", "Дежавю", "Альтруизм", "Мизантроп", "Фрустрация", 
+                    "Коллаборация", "Консенсус", "Экзистенциальный", "Скептицизм", "Прагматизм", "Трансцендентный", 
+                    "Идиосинкразия", "Когнитивный", "Интеграция", "Метаморфоза", "Апофеоз", "Парадигма", "Утопия", 
+                    "Сублимация", "Диверсификация", "Амбивалентность", "Интуиция", "Прецедент", "Люстрация", 
+                    "Агностицизм", "Синергия", "Импичмент", "Эвфемизм", "Какофония", "Герменевтика", "Эсхатология", 
+                    "Перпендикуляр", "Асинхронность", "Изоморфизм", "Солипсизм", "Нигилизм", "Патернализм", "Волатильность", 
+                    "Тавтология", "Аномалия", "Регрессия", "Абстракция", "Конфронтация", "Эвристика", "Легитимность", 
+                    "Популизм", "Эмпатия", "Коннотация", "Рефлексия", "Синекдоха", "Дихотомия", "Плюрализм", "Экспансия", 
+                    "Олигархия", "Бюрократия", "Энцефалопатия", "Репрезентативность", "Ностальгия", "Конформизм", 
+                    "Инициация", "Деградация", "Модернизация", "Идентификация", "Компиляция", "Конденсация", 
+                    "Люминесценция", "Поляризация", "Трансцендентальный", "Утилитаризм", "Диссонанс", "Редукционизм",
+                    "Гносеология", "Онтология", "Феноменологическая", "Фаллибитилизм", "Ретроспектива", "Интроспекция"
+                ]
+            },
+            cities: {
+                name: "Города",
+                words: [
+                    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург", "Казань", "Нижний Новгород", "Челябинск", 
+                    "Самара", "Уфа", "Ростов-на-Дону", "Красноярск", "Воронеж", "Пермь", "Волгоград", "Краснодар", 
+                    "Саратов", "Тюмень", "Тольятти", "Владивосток", "Иркутск", "Сочи", "Хабаровск", "Калининград", 
+                    "Мурманск", "Якутск", "Архангельск", "Вологда", "Череповец", "Кострома", "Ярославль", "Владимир", 
+                    "Иваново", "Рязань", "Тула", "Калуга", "Брянск", "Орел", "Курск", "Белгород", "Липецк", 
+                    "Тамбов", "Пенза", "Ульяновск", "Оренбург", "Астрахань", "Ставрополь", "Нальчик", "Пятигорск", 
+                    "Махачкала", "Грозный", "Владикавказ", "Назрань", "Элиста", "Саранск", "Йошкар-Ола", "Чебоксары", 
+                    "Киров", "Ижевск", "Курган", "Магнитогорск", "Нижний Тагил", "Сургут", "Нижневартовск", "Томск", 
+                    "Кемерово", "Новокузнецк", "Барнаул", "Бийск", "Абакан", "Кызыл", "Улан-Удэ", "Чита", 
+                    "Благовещенск", "Биробиджан", "Магадан", "Петропавловск-Kamчатский", "Южно-Сахалинск", "Анадырь", 
+                    "Петрозаводск", "Великий Новгород", "Псков", "Смоленск", "Тверь", "Рим", "Париж", "Берлин", 
+                    "Лондон", "Мадрид", "Токио", "Пекин", "Нью-Йорк", "Вашингтон", "Вена", "Прага", "Варшава"
+                ]
+            },
+            adult_18: {
+                name: "18+",
+                words: [
+                    "Алкоголь", "Похмелье", "Флирт", "Стриптиз", "Искушение", "Вечеринка", "Страсть", "Камасутра", 
+                    "Поцелуй", "Бармен", "Коктейль", "Свидание", "Клуб", "Презерватив", "Кальян", "Соблазн", 
+                    "Вино", "Сигара", "Наручники", "Татуировка", "Бар", "Ночь", "Секрет", "Адреналин", 
+                    "Соблазнение", "Возбуждение", "Будуар", "Декольте", "Засос", "Приват", "Текила", 
+                    "Вуайеризм", "Эксгибиционизм", "Эротомания", "Садомазохизм", "Нимфомания", "Либидо", 
+                    "Афродизиак", "Эякуляция", "Фетишизм", "Тантрический", "Куртизанка", "Декаданс", 
+                    "Гедонизм", "Либертинаж", "Вожделение", "Платонический", "Оргазмический", "Бахус", 
+                    "Содомия", "Оргия", "Инсинуация", "Фаллоцентризм", "Оргазм", "Алькова", "Любовник", 
+                    "Любовница", "Ревность", "Эротика", "Интим", "Измена", "Обольщение", "Грех", 
+                    "Запрет", "Плетка", "Кожа", "Латекс", "Аффект", "Эйфория", "Наслаждение", "Экстаз", 
+                    "Порочность", "Тайна", "Интимность", "Шоколад", "Шампанское", "Постель", "Шёпот", 
+                    "Прикосновение", "Полумрак", "Вуаль", "Кружево", "Корсет", "Лубрикант", "Массаж", 
+                    "Вибрация", "Игрушка", "Чувственность", "Страстный танец", "Затмение", "Огонь", 
+                    "Порыв", "Фантазия", "Ролевая игра", "Порочный круг", "Запретный плод", "Поцелуй в шею",
+                    "Глубокий вдох", "Утренний кофе", "Простыни", "Искры", "Сладость", "Сближение", "Трепет"
+                ]
+            },
+            cs2: {
+                name: "CS 2",
+                words: [
+                    "Дефьюз", "Смоук", "Флешка", "Хаешка", "Дроп", "Раш", "Эко", "Байт", "Клатч", "Эйс", 
+                    "Плент", "Кемпер", "Хедшот", "Спрей", "Авик", "Калаш", "Эмка", "Дигл", "Юсп", "Глок", 
+                    "Сейв", "Ротация", "Буст", "Вантап", "Тап", "Флик", "Тимейт", "Хайлайт", "Киллфид", 
+                    "Тайминг", "Банихоп", "Смоуклайн", "Молик", "Дифьюза", "Овертайм", "Эко-раунд", 
+                    "Фулл-бай", "Пачка", "Кевлар", "Хай-таб", "Фамас", "Галил", "Скаут", "Зевс", 
+                    "Нож", "Керамбит", "Бабочка", "Штык-нож", "Раш Б", "Плент А", "Двойной мид", 
+                    "Лонг", "Шорт", "Темка", "Ковры", "Банан", "Апартаменты", "Коннектор", "Хелпа", 
+                    "Т-спавн", "КТ-спавн", "Фрифер", "Сенса", "Пинг", "Лосс", "ФПС", "Смоук-лаунчер", 
+                    "Хед", "Флешбэнг", "Осколочная", "Зажигательная", "Декок", "Хитбокс", "Сабтик", 
+                    "Префайр", "Пик", "Колл", "Спрей-контроль", "Эйм", "Прострел", "Оверпасс", 
+                    "Мираж", "Даст", "Анубис", "Вертиго", "Эншент", "Нюк", "Петух", "Гренада"
+                ]
+            }
+        };
+
+        // ГЛОБАЛЬНЫЙ STATE ИГРЫ
+        let state = {
+            currentScreenId: "screen-welcome",
+            myNickname: "",
+            roundTimeLimit: 60,
+            selectedPackKey: "simple",
+            teams: [
+                { id: 1, name: "Банда 1", explainer: "", guesser: "", score: 0 },
+                { id: 2, name: "Банда 2", explainer: "", guesser: "", score: 0 },
+                { id: 3, name: "Банда 3", explainer: "", guesser: "", score: 0 },
+                { id: 4, name: "Банда 4", explainer: "", guesser: "", score: 0 },
+                { id: 5, name: "Банда 5", explainer: "", guesser: "", score: 0 }
+            ],
+            // Игровые параметры сессии
+            activeTeamIndex: 0,
+            activeWord: "",
+            wordsPool: [],
+            roundLogs: [], 
+            
+            // Таймер и Пауза
+            timerIntervalId: null,
+            secondsRemaining: 60,
+            isGamePaused: false,
+            
+            // Текущий режим просмотра экрана
+            currentPerspective: "explainer",
+
+            // Сетевые WebRTC переменные
+            isHost: true,
+            lobbyId: null,
+            peer: null,
+            connections: [], // Для Хоста: массив входящих соединений гостей
+            hostConnection: null // Для Гостя: соединение с Хостом
+        };
+
+        // Запуск при загрузке страницы
+        window.addEventListener("DOMContentLoaded", () => {
+            initLobbyHTML();
+            initPackSelectorsHTML();
+            initPetrushkaLocation();
+            detectGuestLobbyLink();
+        });
+
+        // ПЕРЕКЛЮЧЕНИЕ ЭКРАНОВ
+        function setView(screenId) {
+            document.querySelectorAll(".screen").forEach(scr => scr.classList.remove("active"));
+            const targetScreen = document.getElementById(screenId);
+            if (targetScreen) {
+                targetScreen.classList.add("active");
+                state.currentScreenId = screenId;
+            }
+        }
+
+        // ВСПЛЫВАЮЩИЕ УВЕДОМЛЕНИЯ
+        function emitToast(message) {
+            const toastEl = document.getElementById("toast-el");
+            toastEl.innerText = message;
+            toastEl.style.display = "block";
+            setTimeout(() => { toastEl.style.display = "none"; }, 3000);
+        }
+
+        // КЛИПБОРД СОВМЕСТИМОСТЬ (КОПИРОВАНИЕ)
+        function copyToClipboard(text) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    emitToast("Ссылка скопирована в буфер обмена!");
+                }).catch(() => { fallbackCopyText(text); });
+            } else { fallbackCopyText(text); }
+        }
+
+        function fallbackCopyText(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                emitToast("Ссылка скопирована!");
+            } catch (err) { emitToast("Не удалось скопировать."); }
+            document.body.removeChild(textArea);
+        }
+
+        // ОПРЕДЕЛЕНИЕ ПРИГЛАСИТЕЛЬНОЙ ССЫЛКИ В URL
+        function detectGuestLobbyLink() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const lobbyId = urlParams.get('lobby');
+            if (lobbyId) {
+                state.lobbyId = lobbyId.toUpperCase();
+                state.isHost = false;
+
+                // Изменяем экран входа под нужды подключающегося гостя
+                document.querySelector("#screen-welcome h1").innerHTML = `Alias<br><span style="font-size: 1.8rem; letter-spacing: 9px; font-style: normal;">Underground</span>`;
+                
+                const label = document.createElement("p");
+                label.style.textAlign = "center";
+                label.style.margin = "10px 0";
+                label.style.color = "var(--danger-color)";
+                label.style.textTransform = "uppercase";
+                label.style.fontSize = "1rem";
+                label.innerHTML = `Приглашение в лобби: <strong>${state.lobbyId}</strong>`;
+                
+                const targetInput = document.getElementById("player-nickname");
+                targetInput.parentNode.insertBefore(label, targetInput);
+                
+                // Переназначаем кнопку
+                const startBtn = document.querySelector("#screen-welcome button");
+                startBtn.innerText = "Войти в банду";
+                startBtn.setAttribute("onclick", "actionJoinAsGuest()");
+            }
+        }
+
+        // ИНИЦИАЛИЗАЦИЯ СЕТКИ ЛОББИ (С КНОПКАМИ СВОБОДНОЙ ПОСАДКИ)
+        function initLobbyHTML() {
+            const gridContainer = document.getElementById("lobby-teams-grid");
+            gridContainer.innerHTML = "";
+
+            state.teams.forEach((team, idx) => {
+                const card = document.createElement("div");
+                card.className = "team-card";
+                
+                const renderSlot = (role, val) => {
+                    if (val === "") {
+                        // Если слот пуст, разрешаем любому нажать "Занять"
+                        return `<button class="btn" style="padding: 4px 10px; font-size: 0.8rem; width: 100%; border-style: dashed;" onclick="actionClaimSlot(${idx}, '${role}')">Занять слот</button>`;
+                    } else {
+                        // Если хост — имя можно свободно редактировать, если гость — оно только для чтения
+                        const isReadOnly = (!state.isHost) ? 'readonly' : '';
+                        return `<input type="text" class="slot-input" placeholder="Никнейм..." value="${val}" ${isReadOnly} oninput="handleSlotInputChange(${idx}, '${role}', this.value)">`;
+                    }
+                };
+
+                const swapBtnDisabled = (!state.isHost) ? 'style="display:none;"' : '';
+
+                card.innerHTML = `
+                    <div class="team-card-header">
+                        <span class="team-card-title">${team.name}</span>
+                        <button class="btn-swap" ${swapBtnDisabled} onclick="actionTriggerSwap(${idx})" title="Изменить роли внутри банды">🔁</button>
+                    </div>
+                    <div class="slots-container">
+                        <div class="slot">
+                            <span class="slot-badge">Объясняет:</span>
+                            ${renderSlot('explainer', team.explainer)}
+                        </div>
+                        <div class="slot">
+                            <span class="slot-badge">Отгадывает:</span>
+                            ${renderSlot('guesser', team.guesser)}
+                        </div>
+                    </div>
+                `;
+                gridContainer.appendChild(card);
+            });
+        }
+
+        // ИНИЦИАЛИЗАЦИЯ ПАКОВ
+        function initPackSelectorsHTML() {
+            const container = document.getElementById("pack-selector");
+            container.innerHTML = "";
+
+            Object.keys(ALL_WORD_PACKS).forEach(key => {
+                const btn = document.createElement("button");
+                btn.className = `btn option-btn pack-btn ${state.selectedPackKey === key ? 'selected' : ''}`;
+                btn.innerText = ALL_WORD_PACKS[key].name;
+                btn.onclick = () => actionSelectPack(key);
+                container.appendChild(btn);
+            });
+        }
+
+        // КНОПКА "ЗАНЯТЬ СЛОТ" (Локально для хоста или отправка запроса хосту от гостя)
+        function actionClaimSlot(teamIdx, role) {
+            if (state.isHost) {
+                clearNicknameFromAllSlots(state.myNickname);
+                state.teams[teamIdx][role] = state.myNickname;
+                initLobbyHTML();
+                syncLobbyToAllGuests();
+            } else if (state.hostConnection && state.hostConnection.open) {
+                state.hostConnection.send({
+                    type: 'CLAIM_SLOT',
+                    teamIdx: teamIdx,
+                    role: role,
+                    nickname: state.myNickname
+                });
+            }
+        }
+
+        function clearNicknameFromAllSlots(nickname) {
+            state.teams.forEach(t => {
+                if (t.explainer === nickname) t.explainer = "";
+                if (t.guesser === nickname) t.guesser = "";
+            });
+        }
+
+        // ОБРАБОТЧИКИ ИЗМЕНЕНИЙ В ЛОББИ (Хост редактирует инпут)
+        function handleSlotInputChange(teamIdx, role, val) {
+            state.teams[teamIdx][role] = val.trim();
+            syncLobbyToAllGuests();
+        }
+
+        // ХОСТ ТРИГГЕРИТ СМЕНУ РОЛЕЙ
+        function actionTriggerSwap(teamIdx) {
+            const temp = state.teams[teamIdx].explainer;
+            state.teams[teamIdx].explainer = state.teams[teamIdx].guesser;
+            state.teams[teamIdx].guesser = temp;
+            initLobbyHTML();
+            syncLobbyToAllGuests();
+            emitToast(`Роли в ${state.teams[teamIdx].name} изменены.`);
+        }
+
+        // ХОСТ ТРИГГЕРИТ СМЕНУ КАТЕГОРИИ
+        function actionSelectPack(packKey) {
+            if (!state.isHost) return; // Гости не могут менять категорию напрямую
+            
+            state.selectedPackKey = packKey;
+            document.querySelectorAll(".pack-btn").forEach(btn => btn.classList.remove("selected"));
+            initPackSelectorsHTML();
+            syncLobbyToAllGuests();
+            emitToast(`Категория «${ALL_WORD_PACKS[packKey].name}» активирована.`);
+        }
+
+        // ХОСТ ТРИГГЕРИТ СМЕНУ ВРЕМЕНИ
+        function setRoundTime(seconds) {
+            state.roundTimeLimit = seconds;
+            document.querySelectorAll(".time-btn").forEach(btn => {
+                btn.classList.remove("selected");
+                if (btn.innerText.includes(seconds)) { btn.classList.add("selected"); }
+            });
+            emitToast(`Время раунда: ${seconds} сек.`);
+
+            if (state.isHost) { syncLobbyToAllGuests(); }
+        }
+
+        // СЕТЕВАЯ СИНХРОНИЗАЦИЯ ЛОББИ С ХОСТА К ГОСТЯМ
+        function syncLobbyToAllGuests() {
+            if (!state.isHost) return;
+            broadcastToGuests({
+                type: 'SYNC_LOBBY',
+                teams: state.teams,
+                roundTimeLimit: state.roundTimeLimit,
+                selectedPackKey: state.selectedPackKey,
+                lobbyId: state.lobbyId
+            });
+        }
+
+        // ХОСТ: ЗАПУСК СИГНАЛЬНОГО PEER СЕРВЕРА
+        function initHostPeer(lobbyId) {
+            if (typeof Peer === 'undefined') {
+                emitToast("Сетевой режим недоступен. Запущена локальная сессия.");
+                return;
+            }
+
+            state.peer = new Peer('alias-ug-' + lobbyId);
+
+            state.peer.on('open', (id) => {
+                state.lobbyId = lobbyId;
+                state.isHost = true;
+                
+                // Отображаем кнопку "Поделиться" в лобби
+                const shareBox = document.getElementById("share-lobby-box");
+                if (shareBox) shareBox.style.display = "block";
+                
+                emitToast(`Сетевое лобби открыто: ${lobbyId}`);
+            });
+
+            state.peer.on('connection', (conn) => {
+                conn.on('data', (data) => { handleHostIncomingMessage(conn, data); });
+                
+                conn.on('close', () => {
+                    state.connections = state.connections.filter(c => c !== conn);
+                    emitToast(`Участник ${conn.nickname || 'Гость'} отключился.`);
+                    
+                    // Если игрок сидел в слоте, освобождаем слот при дисконнекте
+                    if (conn.nickname) {
+                        clearNicknameFromAllSlots(conn.nickname);
+                        initLobbyHTML();
+                        syncLobbyToAllGuests();
+                    }
+                });
+
+                state.connections.push(conn);
+            });
+
+            state.peer.on('error', (err) => {
+                console.error(err);
+                emitToast("Ошибка PeerJS. Лобби работает в локальном офлайн режиме.");
+                state.peer = null;
+            });
+        }
+
+        // КНОПКА ПОДЕЛИТЬСЯ ССЫЛКОЙ
+        function actionShareLobbyLink() {
+            if (!state.lobbyId) return;
+            const joinUrl = window.location.origin + window.location.pathname + '?lobby=' + state.lobbyId;
+            copyToClipboard(joinUrl);
+        }
+
+        // ХОСТ: ОБРАБОТЧИК СООБЩЕНИЙ ОТ ГОСТЕЙ
+        function handleHostIncomingMessage(conn, data) {
+            if (data.type === 'JOIN') {
+                conn.nickname = data.nickname;
+                emitToast(`${data.nickname} вошел в лобби.`);
+                
+                // Отправляем гостю актуальный статус лобби
+                conn.send({
+                    type: 'SYNC_LOBBY',
+                    teams: state.teams,
+                    roundTimeLimit: state.roundTimeLimit,
+                    selectedPackKey: state.selectedPackKey,
+                    lobbyId: state.lobbyId
+                });
+            } else if (data.type === 'CLAIM_SLOT') {
+                clearNicknameFromAllSlots(data.nickname);
+                state.teams[data.teamIdx][data.role] = data.nickname;
+                initLobbyHTML();
+                syncLobbyToAllGuests();
+            } else if (data.type === 'NEXT_WORD') {
+                handleWordTransition(data.isSuccess);
+            } else if (data.type === 'TOGGLE_PAUSE') {
+                togglePauseState();
+            } else if (data.type === 'SUBMIT_SCORING_VOTE') {
+                modifyLoggedWordStatus(data.wordIdx, data.guessed);
+            } else if (data.type === 'CONFIRM_SCORING') {
+                actionSubmitRoundScores();
+            }
+        }
+
+        // ГОСТЬ: ПОДКЛЮЧЕНИЕ ПО ПРИГЛАСИТЕЛЬНОЙ ССЫЛКЕ
+        function actionJoinAsGuest() {
+            const input = document.getElementById("player-nickname").value.trim();
+            if (!input) {
+                emitToast("Введите ваш никнейм!");
+                return;
+            }
+            state.myNickname = input;
+
+            if (typeof Peer === 'undefined') {
+                emitToast("PeerJS не загружен. Подключение невозможно.");
+                return;
+            }
+
+            emitToast("Поиск лобби хоста...");
+            state.peer = new Peer();
+
+            state.peer.on('open', () => {
+                const conn = state.peer.connect('alias-ug-' + state.lobbyId);
+                state.hostConnection = conn;
+
+                conn.on('open', () => {
+                    emitToast("Успешный коннект с хостом!");
+                    conn.send({ type: 'JOIN', nickname: state.myNickname });
+                });
+
+                conn.on('data', (data) => { handleGuestIncomingMessage(data); });
+
+                conn.on('close', () => {
+                    emitToast("Хост разорвал соединение.");
+                    window.location.search = ""; // Сброс URL параметров и переход на приветствие
+                });
+            });
+
+            state.peer.on('error', (err) => {
+                console.error(err);
+                emitToast("Ошибка подключения. Проверьте ID или сеть.");
+            });
+        }
+
+        // ГОСТЬ: ОБРАБОТЧИК СООБЩЕНИЙ ОТ ХОСТА
+        function handleGuestIncomingMessage(data) {
+            if (data.type === 'SYNC_LOBBY') {
+                state.teams = data.teams;
+                state.roundTimeLimit = data.roundTimeLimit;
+                state.selectedPackKey = data.selectedPackKey;
+                state.lobbyId = data.lobbyId;
+
+                initLobbyHTML();
+                initPackSelectorsHTML();
+                setRoundTime(state.roundTimeLimit);
+
+                setView("screen-lobby");
+                lockLobbyForGuests();
+            } else if (data.type === 'GAME_START_PREP') {
+                state.activeTeamIndex = data.activeTeamIndex;
+                promptNextTeamPrepare();
+                
+                // Прячем кнопку старта от гостей в режиме подготовки
+                document.querySelector("#screen-prepare button").style.display = "none";
+            } else if (data.type === 'ROUND_START') {
+                const currentTeam = state.teams[state.activeTeamIndex];
+                document.getElementById("active-team-title").innerText = currentTeam.name;
+                document.getElementById("explainer-name-label").innerText = currentTeam.explainer;
+
+                state.secondsRemaining = data.secondsRemaining;
+                document.getElementById("game-timer-display").innerText = state.secondsRemaining;
+
+                const isStrictLock = document.getElementById("strict-role-lock") ? document.getElementById("strict-role-lock").checked : true;
+                if (isStrictLock && state.myNickname !== currentTeam.explainer) {
+                    state.currentPerspective = "others";
+                } else {
+                    state.currentPerspective = "explainer";
+                }
+                updatePerspectiveUI();
+                setView("screen-gameplay");
+            } else if (data.type === 'TICK') {
+                state.secondsRemaining = data.secondsRemaining;
+                document.getElementById("game-timer-display").innerText = state.secondsRemaining;
+            } else if (data.type === 'PAUSE_STATE') {
+                state.isGamePaused = data.isPaused;
+                const btn = document.getElementById("btn-pause-toggle");
+                btn.innerText = state.isGamePaused ? "Продолжить" : "Пауза";
+                renderActiveWordByPerspective();
+            } else if (data.type === 'SHOW_WORD') {
+                state.activeWord = data.word;
+                renderActiveWordByPerspective();
+            } else if (data.type === 'SYNC_SPECTATOR_FEED') {
+                state.roundLogs = data.logs;
+                renderSpectatorWordsFeed();
+            } else if (data.type === 'SCORING_PHASE') {
+                state.roundLogs = data.roundLogs;
+                renderScoringScreen();
+                
+                // Только объясняющий гость (или хост) видит кнопку закрытия счета
+                const currentTeam = state.teams[state.activeTeamIndex];
+                const hasControl = state.myNickname === currentTeam.explainer;
+                document.getElementById("btn-confirm-round").style.display = hasControl ? "block" : "none";
+            } else if (data.type === 'LEADERBOARD_PHASE') {
+                state.teams = data.teams;
+                renderLeaderboard();
+            }
+        }
+
+        // БЛОКИРОВКА ПАНЕЛИ НАСТРОЕК В ЛОББИ ДЛЯ ГОСТЕЙ
+        function lockLobbyForGuests() {
+            if (!state.isHost) {
+                document.querySelectorAll(".pack-btn").forEach(btn => {
+                    btn.disabled = true;
+                    btn.style.opacity = "0.6";
+                });
+                document.querySelectorAll(".time-btn").forEach(btn => {
+                    btn.disabled = true;
+                    btn.style.opacity = "0.6";
+                });
+                const lockCheckbox = document.getElementById("strict-role-lock");
+                if (lockCheckbox) lockCheckbox.disabled = true;
+
+                const autoFillBtn = document.querySelector("#screen-lobby button.btn-danger");
+                if (autoFillBtn) autoFillBtn.style.display = "none";
+
+                const startBtn = document.querySelector("#screen-lobby button[onclick='actionStartSession()']");
+                if (startBtn) {
+                    startBtn.disabled = true;
+                    startBtn.innerText = "Ожидание хоста...";
+                }
+            }
+        }
+
+        // ШИРОКОВЕЩАТЕЛЬНАЯ ОТПРАВКА С ХОСТА ВСЕМ ИГРОКАМ
+        function broadcastToGuests(message) {
+            if (state.connections) {
+                state.connections.forEach(conn => {
+                    if (conn.open) { conn.send(message); }
+                });
+            }
+        }
+
+        // КНОПКА "СОЗДАТЬ ЛОББИ" (Нажатие Хостом)
+        function actionCreateLobby() {
+            const input = document.getElementById("player-nickname").value.trim();
+            if (!input) {
+                emitToast("Введите ваш никнейм для создания!");
+                return;
+            }
+            state.myNickname = input;
+            state.teams[0].explainer = input;
+            state.isHost = true;
+            
+            // Генерируем 5-значный уникальный ID для этой сессии
+            const genLobbyId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            
+            initLobbyHTML();
+            setView("screen-lobby");
+            
+            // Запускаем сигнальный WebRTC сервер
+            initHostPeer(genLobbyId);
+        }
+
+        // АВТОЗАПОЛНЕНИЕ ДЛЯ ОЦЕНКИ ИГРЫ
+        function fillDebugTeams() {
+            const list = [
+                { exp: "STREET_ART", guess: "SPRAYER" },
+                { exp: "LOW_RIDER", guess: "BEAT_BOX" },
+                { exp: "CRASHER", guess: "TAGGER" }
+            ];
+            list.forEach((p, idx) => {
+                state.teams[idx].explainer = p.exp;
+                state.teams[idx].guesser = p.guess;
+            });
+            if (state.myNickname) {
+                state.teams[0].explainer = state.myNickname;
+            }
+            initLobbyHTML();
+            syncLobbyToAllGuests();
+            emitToast("Банды заполнены тестовыми участниками.");
+        }
+
+        // НАЧАТЬ СЕССИЮ
+        function actionStartSession() {
+            const activeTeams = extractActiveTeams();
+            if (activeTeams.length < 2) {
+                emitToast("Заполните составы минимум для 2 банд (по 2 человека)!");
+                return;
+            }
+
+            const targetPack = ALL_WORD_PACKS[state.selectedPackKey] || ALL_WORD_PACKS.simple;
+            state.wordsPool = [...targetPack.words];
+            shuffleArray(state.wordsPool);
+
+            state.teams.forEach(t => t.score = 0);
+
+            const firstTeam = activeTeams[0];
+            state.activeTeamIndex = state.teams.findIndex(t => t.id === firstTeam.id);
+
+            // Перенаправляем гостей на экран подготовки
+            broadcastToGuests({
+                type: 'GAME_START_PREP',
+                activeTeamIndex: state.activeTeamIndex
+            });
+
+            promptNextTeamPrepare();
+        }
+
+        // ПОДГОТОВКА СЛЕДУЮЩЕЙ КОМАНДЫ
+        function promptNextTeamPrepare() {
+            const currentTeam = state.teams[state.activeTeamIndex];
+            
+            document.getElementById("prep-team-name").innerText = currentTeam.name;
+            document.getElementById("prep-explainer").innerText = currentTeam.explainer;
+            document.getElementById("prep-guesser").innerText = currentTeam.guesser;
+
+            setView("screen-prepare");
+        }
+
+        // СТАРТ РАУНДА И ТАЙМЕРА
+        function actionLaunchReadyRound() {
+            const currentTeam = state.teams[state.activeTeamIndex];
+            const isStrictLock = document.getElementById("strict-role-lock") ? document.getElementById("strict-role-lock").checked : true;
+
+            document.getElementById("active-team-title").innerText = currentTeam.name;
+            document.getElementById("explainer-name-label").innerText = currentTeam.explainer;
+
+            state.secondsRemaining = state.roundTimeLimit;
+            document.getElementById("game-timer-display").innerText = state.secondsRemaining;
+            
+            state.roundLogs = [];
+            state.isGamePaused = false;
+            document.getElementById("btn-pause-toggle").innerText = "Пауза";
+
+            if (isStrictLock && state.myNickname !== currentTeam.explainer) {
+                state.currentPerspective = "others";
+            } else {
+                state.currentPerspective = "explainer";
+            }
+            updatePerspectiveUI();
+
+            document.getElementById("spec-words-column").innerHTML = `
+                <div style="color: var(--dim-color); font-style: italic;">Ожидаем действий объясняющего...</div>
+            `;
+
+            // Уведомляем гостей о старте раунда
+            broadcastToGuests({
+                type: 'ROUND_START',
+                secondsRemaining: state.secondsRemaining
+            });
+
+            drawNextSecretWord();
+            setView("screen-gameplay");
+
+            if (state.timerIntervalId) clearInterval(state.timerIntervalId);
+            state.timerIntervalId = setInterval(handleTimerTick, 1000);
+        }
+
+        // ИЗМЕНЕНИЕ РЕЖИМА ПРОСМОТРА РОЛИ (ОБЪЯСНЯЮЩИЙ / ДРУГИЕ)
+        function changePerspective(role) {
+            const currentTeam = state.teams[state.activeTeamIndex];
+            const isStrictLock = document.getElementById("strict-role-lock") ? document.getElementById("strict-role-lock").checked : true;
+
+            if (role === "explainer" && isStrictLock && state.myNickname !== currentTeam.explainer) {
+                emitToast("Доступ запрещен! Экран объясняющего заблокирован для вас.");
+                return;
+            }
+
+            state.currentPerspective = role;
+            updatePerspectiveUI();
+            renderActiveWordByPerspective();
+            emitToast(role === 'explainer' ? "Режим: Экран Объясняющего" : "Режим: Экран Игроков");
+        }
+
+        // Визуальное обновление вкладок ролей и ограничение доступа
+        function updatePerspectiveUI() {
+            const btnExplainer = document.getElementById("persp-btn-explainer");
+            const btnOthers = document.getElementById("persp-btn-others");
+            const controlsWrapper = document.getElementById("explainer-controls-wrapper");
+            const currentTeam = state.teams[state.activeTeamIndex];
+            const isStrictLock = document.getElementById("strict-role-lock") ? document.getElementById("strict-role-lock").checked : true;
+
+            const hasPermission = !isStrictLock || (state.myNickname === currentTeam.explainer);
+
+            if (!hasPermission) {
+                btnExplainer.disabled = true;
+                btnExplainer.style.opacity = "0.3";
+                btnExplainer.style.cursor = "not-allowed";
+                btnExplainer.title = `Экран заблокирован. Объясняет: ${currentTeam.explainer}`;
+                if (state.currentPerspective === "explainer") { state.currentPerspective = "others"; }
+            } else {
+                btnExplainer.disabled = false;
+                btnExplainer.style.opacity = "1";
+                btnExplainer.style.cursor = "pointer";
+                btnExplainer.title = "";
+            }
+
+            if (state.currentPerspective === "explainer") {
+                btnExplainer.classList.add("selected");
+                btnOthers.classList.remove("selected");
+                if (controlsWrapper) controlsWrapper.style.display = "block";
+            } else {
+                btnExplainer.classList.remove("selected");
+                btnOthers.classList.add("selected");
+                if (controlsWrapper) controlsWrapper.style.display = "none";
+            }
+        }
+
+        // ХОСТ: ПОЛУЧЕНИЕ СЛЕДУЮЩЕГО СЛОВА С ЗАЩИТОЙ КАНАЛА СВЯЗИ
+        function drawNextSecretWord() {
+            if (state.wordsPool.length === 0) {
+                const targetPack = ALL_WORD_PACKS[state.selectedPackKey] || ALL_WORD_PACKS.simple;
+                state.wordsPool = [...targetPack.words];
+                shuffleArray(state.wordsPool);
+            }
+            
+            state.activeWord = state.wordsPool.pop();
+            const currentTeam = state.teams[state.activeTeamIndex];
+
+            // Если Хост является активным объясняющим раунда
+            if (state.isHost && state.myNickname === currentTeam.explainer) {
+                renderActiveWordByPerspective();
+            } else {
+                // Если хост — зритель, скрываем слово на основном экране
+                renderActiveWordByPerspective();
+
+                // Ищем активное соединение объясняющего и отправляем слово ТОЛЬКО ЕМУ
+                if (state.isHost && state.connections) {
+                    state.connections.forEach(conn => {
+                        if (conn.nickname === currentTeam.explainer && conn.open) {
+                            conn.send({ type: 'SHOW_WORD', word: state.activeWord });
+                        } else {
+                            conn.send({ type: 'SHOW_WORD', word: "" }); // Другим улетает пустышка
+                        }
+                    });
+                }
+            }
+        }
+
+        // ОТРИСОВКА СЛОВА НА ОСНОВЕ ПЕРСПЕКТИВЫ ПРОСМОТРА
+        function renderActiveWordByPerspective() {
+            const container = document.getElementById("word-viewport");
+            container.innerHTML = "";
+
+            if (state.isGamePaused) {
+                container.innerHTML = `<div class="shutter-overlay">ПАУЗА (ЭКРАН СКРЫТ)</div>`;
+                return;
+            }
+
+            if (state.currentPerspective === "explainer" && state.activeWord) {
+                const display = document.createElement("div");
+                display.className = "word-display";
+                display.innerText = state.activeWord;
+                container.appendChild(display);
+            } else {
+                const placeholder = document.createElement("div");
+                placeholder.className = "word-display";
+                placeholder.style.fontSize = "1.8rem";
+                placeholder.style.color = "var(--dim-color)";
+                placeholder.style.fontStyle = "italic";
+                placeholder.innerText = "НЕИЗВЕСТНОЕ СЛОВО";
+                container.appendChild(placeholder);
+            }
+        }
+
+        // ВЫСТРЕЛ ТАЙМЕРА ХОСТА
+        function handleTimerTick() {
+            if (state.isGamePaused) return;
+
+            state.secondsRemaining--;
+            document.getElementById("game-timer-display").innerText = state.secondsRemaining;
+
+            broadcastToGuests({
+                type: 'TICK',
+                secondsRemaining: state.secondsRemaining
+            });
+
+            if (state.secondsRemaining <= 0) {
+                clearInterval(state.timerIntervalId);
+                concludeActiveRound();
+            }
+        }
+
+        // ПАУЗА В ИГРЕ
+        function togglePauseState() {
+            if (!state.isHost && state.hostConnection && state.hostConnection.open) {
+                state.hostConnection.send({ type: 'TOGGLE_PAUSE' });
+                return;
+            }
+
+            state.isGamePaused = !state.isGamePaused;
+            const btn = document.getElementById("btn-pause-toggle");
+            btn.innerText = state.isGamePaused ? "Продолжить" : "Пауза";
+
+            broadcastToGuests({
+                type: 'PAUSE_STATE',
+                isPaused: state.isGamePaused
+            });
+
+            renderActiveWordByPerspective();
+            emitToast(state.isGamePaused ? "Технический перерыв" : "Игра продолжается");
+        }
+
+        // НАЖАТИЕ КНОПКИ СЛЕДУЮЩЕЕ СЛОВО
+        function handleWordTransition(isSuccess) {
+            if (state.isGamePaused) return;
+
+            // Если кнопку нажал гость (Объясняющий), отправляем сигнал Хосту
+            if (!state.isHost && state.hostConnection && state.hostConnection.open) {
+                state.hostConnection.send({ type: 'NEXT_WORD', isSuccess: isSuccess });
+                return;
+            }
+
+            const word = state.activeWord;
+            state.roundLogs.push({ word: word, guessed: isSuccess });
+
+            // Рассылаем гостям обновленный стек зрителей
+            broadcastToGuests({
+                type: 'SYNC_SPECTATOR_FEED',
+                logs: state.roundLogs
+            });
+
+            // Отрисовываем у себя в панели
+            appendSpectatorWord(word, isSuccess);
+
+            drawNextSecretWord();
+        }
+
+        // Дублирование слова в лог зрителей
+        function appendSpectatorWord(word, isSuccess) {
+            const specColumn = document.getElementById("spec-words-column");
+            
+            if (state.roundLogs.length === 1) { specColumn.innerHTML = ""; }
+
+            const item = document.createElement("div");
+            item.className = "spectator-word-item";
+            
+            if (isSuccess) {
+                item.innerHTML = `<span class="spec-success">✅ ${word}</span> <span>(Успех)</span>`;
+            } else {
+                item.innerHTML = `<span class="spec-skip">❌ ${word}</span> <span>(Пропущено)</span>`;
+            }
+
+            specColumn.insertBefore(item, specColumn.firstChild);
+        }
+
+        function renderSpectatorWordsFeed() {
+            const specColumn = document.getElementById("spec-words-column");
+            specColumn.innerHTML = "";
+            state.roundLogs.forEach(item => {
+                const row = document.createElement("div");
+                row.className = "spectator-word-item";
+                if (item.guessed) {
+                    row.innerHTML = `<span class="spec-success">✅ ${item.word}</span> <span>(Успех)</span>`;
+                } else {
+                    row.innerHTML = `<span class="spec-skip">❌ ${item.word}</span> <span>(Пропущено)</span>`;
+                }
+                specColumn.appendChild(row);
+            });
+        }
+
+        // ОКОНЧАНИЕ ТАЙМЕРА
+        function concludeActiveRound() {
+            emitToast("Время раунда истекло!");
+            state.roundLogs.push({ word: state.activeWord, guessed: false });
+
+            broadcastToGuests({
+                type: 'SCORING_PHASE',
+                roundLogs: state.roundLogs
+            });
+
+            renderScoringScreen();
+        }
+
+        // ЭКРАН СВЕРКИ ОЧКОВ
+        function renderScoringScreen() {
+            const currentTeam = state.teams[state.activeTeamIndex];
+            document.getElementById("scoring-team-name").innerText = `Сверка раунда: ${currentTeam.name}`;
+
+            const wrapper = document.getElementById("scoring-list-wrapper");
+            wrapper.innerHTML = "";
+
+            state.roundLogs.forEach((item, index) => {
+                const row = document.createElement("div");
+                row.className = "scoring-row";
+                row.innerHTML = `
+                    <span class="scoring-word">${item.word}</span>
+                    <div class="scoring-controls">
+                        <button class="score-toggle-btn ${item.guessed ? 'active-1' : ''}" 
+                                id="score-btn-1-${index}" onclick="modifyLoggedWordStatus(${index}, true)">1</button>
+                        <button class="score-toggle-btn ${!item.guessed ? 'active-0' : ''}" 
+                                id="score-btn-0-${index}" onclick="modifyLoggedWordStatus(${index}, false)">0</button>
+                    </div>
+                `;
+                wrapper.appendChild(row);
+            });
+
+            setView("screen-scoring");
+        }
+
+        // Изменение статуса слова на сверке (Синхронно на всех девайсах)
+        function modifyLoggedWordStatus(index, isGuessed) {
+            if (!state.isHost && state.hostConnection && state.hostConnection.open) {
+                state.hostConnection.send({
+                    type: 'SUBMIT_SCORING_VOTE',
+                    wordIdx: index,
+                    guessed: isGuessed
+                });
+                return;
+            }
+
+            state.roundLogs[index].guessed = isGuessed;
+
+            const btn1 = document.getElementById(`score-btn-1-${index}`);
+            const btn0 = document.getElementById(`score-btn-0-${index}`);
+
+            if (isGuessed) {
+                btn1.classList.add("active-1");
+                btn0.classList.remove("active-0");
+            } else {
+                btn1.classList.remove("active-1");
+                btn0.classList.add("active-0");
+            }
+
+            // Хост шлет апдейт гостям
+            broadcastToGuests({
+                type: 'SCORING_PHASE',
+                roundLogs: state.roundLogs
+            });
+        }
+
+        // ПРИНЯТИЕ ОЧКОВ И РОТАЦИЯ КОМАНДЫ (Синхронно)
+        function actionSubmitRoundScores() {
+            if (!state.isHost && state.hostConnection && state.hostConnection.open) {
+                state.hostConnection.send({ type: 'CONFIRM_SCORING' });
+                return;
+            }
+
+            const pointsGained = state.roundLogs.filter(item => item.guessed).length;
+            state.teams[state.activeTeamIndex].score += pointsGained;
+            emitToast(`Начислено очков: +${pointsGained}`);
+
+            determineTurnRotation();
+        }
+
+        // ОПРЕДЕЛЕНИЕ СЛЕДУЮЩЕГО ХОДА
+        function determineTurnRotation() {
+            const activeTeams = extractActiveTeams();
+            const currentTeamId = state.teams[state.activeTeamIndex].id;
+            const subIndex = activeTeams.findIndex(t => t.id === currentTeamId);
+
+            if (subIndex === activeTeams.length - 1) {
+                // Синхронизируем финальные очки с гостями
+                broadcastToGuests({
+                    type: 'LEADERBOARD_PHASE',
+                    teams: state.teams
+                });
+                renderLeaderboard();
+            } else {
+                const nextActiveTeam = activeTeams[subIndex + 1];
+                state.activeTeamIndex = state.teams.findIndex(t => t.id === nextActiveTeam.id);
+                
+                broadcastToGuests({
+                    type: 'GAME_START_PREP',
+                    activeTeamIndex: state.activeTeamIndex
+                });
+
+                promptNextTeamPrepare();
+            }
+        }
+
+        // ТАБЛИЦА ЛИДЕРОВ
+        function renderLeaderboard() {
+            const tbody = document.querySelector("#leaderboard-table tbody");
+            tbody.innerHTML = "";
+
+            const sortedTeams = [...state.teams]
+                .filter(t => t.explainer && t.guesser)
+                .sort((a, b) => b.score - a.score);
+
+            sortedTeams.forEach(team => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td style="font-weight: bold; text-transform: uppercase;">${team.name}</td>
+                    <td>${team.explainer} / ${team.guesser}</td>
+                    <td style="font-size: 1.25rem; font-weight: bold;">${team.score}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            setView("screen-leaderboard");
+        }
+
+        function actionResetSessionToLobby() {
+            setView("screen-lobby");
+        }
+
+        function actionRestartFullGame() {
+            state.teams.forEach(t => t.score = 0);
+            const activeTeams = extractActiveTeams();
+            if (activeTeams.length > 0) {
+                state.activeTeamIndex = state.teams.findIndex(t => t.id === activeTeams[0].id);
+                promptNextTeamPrepare();
+            } else {
+                setView("screen-lobby");
+            }
+        }
+
+        // ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ТАСОВАНИЯ ПУЛА
+        function shuffleArray(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+        }
+
+        // ИНИЦИАЛИЗАЦИЯ И ИНТЕЛЛЕКТУАЛЬНЫЙ АЛГОРИТМ ПОВЕДЕНИЯ ПЕТРУШКИ
+        function initPetrushkaLocation() {
+            const pet = document.getElementById("petrushka");
+            if (!pet) return;
+
+            pet.style.left = `${Math.random() * (window.innerWidth - 150) + 20}px`;
+            pet.style.top = `${Math.random() * (window.innerHeight - 150) + 20}px`;
+
+            setInterval(updatePetrushkaState, 3500);
+        }
+
+        function updatePetrushkaState() {
+            const pet = document.getElementById("petrushka");
+            if (!pet) return;
+
+            const behaviors = ['run', 'stand', 'look', 'pose'];
+            const nextAction = behaviors[Math.floor(Math.random() * behaviors.length)];
+
+            pet.className = "petrushka-char";
+
+            if (nextAction === 'run') {
+                pet.classList.add("running");
+
+                const edgeOffset = 120;
+                const targetX = Math.random() * (window.innerWidth - edgeOffset * 2) + edgeOffset;
+                const targetY = Math.random() * (window.innerHeight - edgeOffset * 2) + edgeOffset;
+
+                const currentX = parseFloat(pet.style.left) || 100;
+                if (targetX < currentX) {
+                    pet.style.transform = "scaleX(-1)";
+                } else {
+                    pet.style.transform = "scaleX(1)";
+                }
+
+                pet.style.left = `${targetX}px`;
+                pet.style.top = `${targetY}px`;
+
+                setTimeout(() => {
+                    if (pet.classList.contains("running")) {
+                        pet.className = "petrushka-char standing";
+                    }
+                }, 2200);
+
+            } else if (nextAction === 'look') {
+                pet.classList.add("looking");
+                
+                const currentX = parseFloat(pet.style.left) || 100;
+                const centerX = window.innerWidth / 2;
+                if (centerX < currentX) {
+                    pet.style.transform = "scaleX(-1)";
+                } else {
+                    pet.style.transform = "scaleX(1)";
+                }
+
+            } else if (nextAction === 'pose') {
+                pet.classList.add("posing");
+            } else {
+                pet.classList.add("standing");
+            }
+        }
+    </script>
+</body>
+</html>
