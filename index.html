@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alias: Underground</title>
     <!-- Подключение PeerJS для реализации сетевого WebRTC мультиплеера -->
-    <script src="https://cloudflare.com"></script>
+    <script src="https://unpkg.com"></script>
     <style>
         /* Основные стили в стиле андеграунд-минимализма */
         :root {
@@ -1077,13 +1077,17 @@
         }
 
         // ХОСТ: ЗАПУСК СИГНАЛЬНОГО PEER СЕРВЕРА
-        state.peer = new Peer();
-            const shareBtn = document.getElementById("btn-share-lobby");
-            if (shareBtn) {
-                shareBtn.disabled = true;
-                shareBtn.innerText = "⌛ Сеть: Подключение...";
-            }
-
+state.peer = new Peer({
+    host: '://peerjs.com',
+    port: 443,
+    secure: true,
+    path: '/'
+});
+const shareBtn = document.getElementById("btn-share-lobby");
+if (shareBtn) {
+    shareBtn.disabled = true;
+    shareBtn.innerText = "⏳ Сеть: Подключение...";
+}
             if (typeof Peer === 'undefined') {
                 emitToast("Сетевой режим недоступен. Работает локальный офлайн.");
                 if (shareBtn) {
@@ -1094,7 +1098,7 @@
             }
 
             // Инициализация соединения с публичным облаком PeerJS
-            state.peer = new Peer('alias-ug-' + lobbyId);
+            state.peer = new Peer('alias-ug-' + lobbyId, { host: '://peerjs.com', port: 443, secure: true, path: '/' });
 
             state.peer.on('open', (id) => {
                 state.lobbyId = lobbyId;
