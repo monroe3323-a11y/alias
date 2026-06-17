@@ -577,11 +577,11 @@
                 <!-- Генерируется через JS -->
             </div>
 
-            <!-- Блок для обмена ссылкой лобби (Показывается только Хосту) -->
-            <div class="settings-section" id="share-lobby-box" style="display: none; border-top: none; padding-top: 0; margin-top: 0;">
+            <!-- Блок для обмена ссылкой лобби (Теперь виден сразу, статус меняется динамически) -->
+            <div class="settings-section" id="share-lobby-box" style="border-top: none; padding-top: 0; margin-top: 0;">
                 <p class="settings-label">Связь с бандой</p>
-                <button class="btn" style="width: 100%; border-color: var(--danger-color); color: var(--danger-color);" onclick="actionShareLobbyLink()">
-                    Пригласить друзей (Поделиться лобби)
+                <button id="btn-share-lobby" class="btn" style="width: 100%; border-color: var(--danger-color); color: var(--danger-color);" onclick="actionShareLobbyLink()" disabled>
+                    ⌛ Инициализация сети...
                 </button>
             </div>
 
@@ -656,7 +656,7 @@
 
                     <div class="word-container">
                         <div id="word-viewport">
-                            <!-- Сюда вставляется слово или «НЕИЗВЕСТНОЕ СЛОВО» -->
+                            <!-- Сюда динамически вставляется слово или надпись «НЕИЗВЕСТНОЕ СЛОВО» -->
                         </div>
                     </div>
 
@@ -958,10 +958,8 @@
                 
                 const renderSlot = (role, val) => {
                     if (val === "") {
-                        // Если слот пуст, разрешаем любому нажать "Занять"
                         return `<button class="btn" style="padding: 4px 10px; font-size: 0.8rem; width: 100%; border-style: dashed;" onclick="actionClaimSlot(${idx}, '${role}')">Занять слот</button>`;
                     } else {
-                        // Если хост — имя можно свободно редактировать, если гость — оно только для чтения
                         const isReadOnly = (!state.isHost) ? 'readonly' : '';
                         return `<input type="text" class="slot-input" placeholder="Никнейм..." value="${val}" ${isReadOnly} oninput="handleSlotInputChange(${idx}, '${role}', this.value)">`;
                     }
@@ -1003,7 +1001,7 @@
             });
         }
 
-        // КНОПКА "ЗАНЯТЬ СЛОТ" (Локально для хоста или отправка запроса хосту от гостя)
+        // КНОПКА "ЗАНЯТЬ СЛОТ"
         function actionClaimSlot(teamIdx, role) {
             if (state.isHost) {
                 clearNicknameFromAllSlots(state.myNickname);
@@ -1045,7 +1043,7 @@
 
         // ХОСТ ТРИГГЕРИТ СМЕНУ КАТЕГОРИИ
         function actionSelectPack(packKey) {
-            if (!state.isHost) return; // Гости не могут менять категорию напрямую
+            if (!state.isHost) return;
             
             state.selectedPackKey = packKey;
             document.querySelectorAll(".pack-btn").forEach(btn => btn.classList.remove("selected"));
@@ -1080,20 +1078,33 @@
 
         // ХОСТ: ЗАПУСК СИГНАЛЬНОГО PEER СЕРВЕРА
         function initHostPeer(lobbyId) {
+            const shareBtn = document.getElementById("btn-share-lobby");
+            if (shareBtn) {
+                shareBtn.disabled = true;
+                shareBtn.innerText = "⌛ Сеть: Подключение...";
+            }
+
             if (typeof Peer === 'undefined') {
-                emitToast("Сетевой режим недоступен. Запущена локальная сессия.");
+                emitToast("Сетевой режим недоступен. Работает локальный офлайн.");
+                if (shareBtn) {
+                    shareBtn.disabled = true;
+                    shareBtn.innerText = "❌ Офлайн-режим (Без приглашений)";
+                }
                 return;
             }
 
+            // Инициализация соединения с публичным облаком PeerJS
             state.peer = new Peer('alias-ug-' + lobbyId);
 
             state.peer.on('open', (id) => {
                 state.lobbyId = lobbyId;
                 state.isHost = true;
                 
-                // Отображаем кнопку "Поделиться" в лобби
-                const shareBox = document.getElementById("share-lobby-box");
-                if (shareBox) shareBox.style.display = "block";
+                // Активируем кнопку приглашений
+                if (shareBtn) {
+                    shareBtn.disabled = false;
+                    shareBtn.innerText = "Пригласить друзей (Поделиться лобби)";
+                }
                 
                 emitToast(`Сетевое лобби открыто: ${lobbyId}`);
             });
@@ -1105,7 +1116,6 @@
                     state.connections = state.connections.filter(c => c !== conn);
                     emitToast(`Участник ${conn.nickname || 'Гость'} отключился.`);
                     
-                    // Если игрок сидел в слоте, освобождаем слот при дисконнекте
                     if (conn.nickname) {
                         clearNicknameFromAllSlots(conn.nickname);
                         initLobbyHTML();
@@ -1118,7 +1128,11 @@
 
             state.peer.on('error', (err) => {
                 console.error(err);
-                emitToast("Ошибка PeerJS. Лобби работает в локальном офлайн режиме.");
+                if (shareBtn) {
+                    shareBtn.disabled = true;
+                    shareBtn.innerText = "❌ Сеть заблокирована (Локальный режим)";
+                }
+                emitToast("Сетевой сервис недоступен. Запущен локальный режим.");
                 state.peer = null;
             });
         }
@@ -1136,7 +1150,6 @@
                 conn.nickname = data.nickname;
                 emitToast(`${data.nickname} вошел в лобби.`);
                 
-                // Отправляем гостю актуальный статус лобби
                 conn.send({
                     type: 'SYNC_LOBBY',
                     teams: state.teams,
@@ -1190,7 +1203,7 @@
 
                 conn.on('close', () => {
                     emitToast("Хост разорвал соединение.");
-                    window.location.search = ""; // Сброс URL параметров и переход на приветствие
+                    window.location.search = ""; 
                 });
             });
 
@@ -1217,8 +1230,6 @@
             } else if (data.type === 'GAME_START_PREP') {
                 state.activeTeamIndex = data.activeTeamIndex;
                 promptNextTeamPrepare();
-                
-                // Прячем кнопку старта от гостей в режиме подготовки
                 document.querySelector("#screen-prepare button").style.display = "none";
             } else if (data.type === 'ROUND_START') {
                 const currentTeam = state.teams[state.activeTeamIndex];
@@ -1254,7 +1265,6 @@
                 state.roundLogs = data.roundLogs;
                 renderScoringScreen();
                 
-                // Только объясняющий гость (или хост) видит кнопку закрытия счета
                 const currentTeam = state.teams[state.activeTeamIndex];
                 const hasControl = state.myNickname === currentTeam.explainer;
                 document.getElementById("btn-confirm-round").style.display = hasControl ? "block" : "none";
@@ -1286,6 +1296,10 @@
                     startBtn.disabled = true;
                     startBtn.innerText = "Ожидание хоста...";
                 }
+
+                // Прячем кнопку "Поделиться" для гостей
+                const shareBox = document.getElementById("share-lobby-box");
+                if (shareBox) shareBox.style.display = "none";
             }
         }
 
@@ -1335,7 +1349,7 @@
             }
             initLobbyHTML();
             syncLobbyToAllGuests();
-            emitToast("Банды заполнены тестовыми участниками.");
+            emitToast("Банды заполнились.");
         }
 
         // НАЧАТЬ СЕССИЮ
@@ -1355,7 +1369,6 @@
             const firstTeam = activeTeams[0];
             state.activeTeamIndex = state.teams.findIndex(t => t.id === firstTeam.id);
 
-            // Перенаправляем гостей на экран подготовки
             broadcastToGuests({
                 type: 'GAME_START_PREP',
                 activeTeamIndex: state.activeTeamIndex
@@ -1401,7 +1414,6 @@
                 <div style="color: var(--dim-color); font-style: italic;">Ожидаем действий объясняющего...</div>
             `;
 
-            // Уведомляем гостей о старте раунда
             broadcastToGuests({
                 type: 'ROUND_START',
                 secondsRemaining: state.secondsRemaining
@@ -1464,7 +1476,7 @@
             }
         }
 
-        // ХОСТ: ПОЛУЧЕНИЕ СЛЕДУЮЩЕГО СЛОВА С ЗАЩИТОЙ КАНАЛА СВЯЗИ
+        // ХОСТ: ПОЛУЧЕНИЕ СЛЕДУЮЩЕГО СЛОВА
         function drawNextSecretWord() {
             if (state.wordsPool.length === 0) {
                 const targetPack = ALL_WORD_PACKS[state.selectedPackKey] || ALL_WORD_PACKS.simple;
@@ -1475,20 +1487,19 @@
             state.activeWord = state.wordsPool.pop();
             const currentTeam = state.teams[state.activeTeamIndex];
 
-            // Если Хост является активным объясняющим раунда
+            // Если Хост является активным объясняющим
             if (state.isHost && state.myNickname === currentTeam.explainer) {
                 renderActiveWordByPerspective();
             } else {
-                // Если хост — зритель, скрываем слово на основном экране
                 renderActiveWordByPerspective();
 
-                // Ищем активное соединение объясняющего и отправляем слово ТОЛЬКО ЕМУ
+                // Шлем гостю-объясняющему
                 if (state.isHost && state.connections) {
                     state.connections.forEach(conn => {
                         if (conn.nickname === currentTeam.explainer && conn.open) {
                             conn.send({ type: 'SHOW_WORD', word: state.activeWord });
                         } else {
-                            conn.send({ type: 'SHOW_WORD', word: "" }); // Другим улетает пустышка
+                            conn.send({ type: 'SHOW_WORD', word: "" });
                         }
                     });
                 }
@@ -1563,7 +1574,6 @@
         function handleWordTransition(isSuccess) {
             if (state.isGamePaused) return;
 
-            // Если кнопку нажал гость (Объясняющий), отправляем сигнал Хосту
             if (!state.isHost && state.hostConnection && state.hostConnection.open) {
                 state.hostConnection.send({ type: 'NEXT_WORD', isSuccess: isSuccess });
                 return;
@@ -1572,13 +1582,11 @@
             const word = state.activeWord;
             state.roundLogs.push({ word: word, guessed: isSuccess });
 
-            // Рассылаем гостям обновленный стек зрителей
             broadcastToGuests({
                 type: 'SYNC_SPECTATOR_FEED',
                 logs: state.roundLogs
             });
 
-            // Отрисовываем у себя в панели
             appendSpectatorWord(word, isSuccess);
 
             drawNextSecretWord();
@@ -1656,7 +1664,7 @@
             setView("screen-scoring");
         }
 
-        // Изменение статуса слова на сверке (Синхронно на всех девайсах)
+        // Изменение статуса слова на сверке (Синхронно)
         function modifyLoggedWordStatus(index, isGuessed) {
             if (!state.isHost && state.hostConnection && state.hostConnection.open) {
                 state.hostConnection.send({
@@ -1680,7 +1688,6 @@
                 btn0.classList.add("active-0");
             }
 
-            // Хост шлет апдейт гостям
             broadcastToGuests({
                 type: 'SCORING_PHASE',
                 roundLogs: state.roundLogs
@@ -1708,7 +1715,6 @@
             const subIndex = activeTeams.findIndex(t => t.id === currentTeamId);
 
             if (subIndex === activeTeams.length - 1) {
-                // Синхронизируем финальные очки с гостями
                 broadcastToGuests({
                     type: 'LEADERBOARD_PHASE',
                     teams: state.teams
