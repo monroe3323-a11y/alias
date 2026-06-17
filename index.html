@@ -1077,7 +1077,7 @@
         }
 
         // ХОСТ: ЗАПУСК СИГНАЛЬНОГО PEER СЕРВЕРА
-        state.peer = new Peer('alias-ug-' + lobbyId, { host: 'alias-underground.metered.live', port: 443, secure: true, path: '/peerjs' });
+        state.peer = new Peer();
             const shareBtn = document.getElementById("btn-share-lobby");
             if (shareBtn) {
                 shareBtn.disabled = true;
@@ -1188,7 +1188,7 @@
             }
 
             emitToast("Поиск лобби хоста...");
-            state.peer = new Peer({ host: 'alias-underground.metered.live', port: 443, secure: true, path: '/peerjs' });
+            state.peer = new Peer();
 
             state.peer.on('open', () => {
                 const conn = state.peer.connect('alias-ug-' + state.lobbyId);
