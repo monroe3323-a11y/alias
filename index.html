@@ -1077,7 +1077,7 @@
         }
 
         // ХОСТ: ЗАПУСК СИГНАЛЬНОГО PEER СЕРВЕРА
-        state.peer = new Peer('alias-ug-' + lobbyId, { host: '://peerjs.com', port: 443, secure: true });
+        state.peer = new Peer('alias-ug-' + lobbyId, { host: 'peerjs.920249.xyz', port: 443, secure: true });
             const shareBtn = document.getElementById("btn-share-lobby");
             if (shareBtn) {
                 shareBtn.disabled = true;
@@ -1188,7 +1188,7 @@
             }
 
             emitToast("Поиск лобби хоста...");
-            state.peer = new Peer({ host: '://peerjs.com', port: 443, secure: true });
+            state.peer = new Peer({ host: 'peerjs.920249.xyz', port: 443, secure: true });
 
             state.peer.on('open', () => {
                 const conn = state.peer.connect('alias-ug-' + state.lobbyId);
